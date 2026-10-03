@@ -1,47 +1,96 @@
-const jwt = require('jsonwebtoken');
-const dotenv = require('dotenv');
+const db = require('./db');
 
-dotenv.config();
-
-const SECRET = process.env.JWT_SECRET || 'your_secret_key';
-const EXPIRY = process.env.JWT_EXPIRE || '7d';
-
-const generateToken = (user) => {
-  return jwt.sign(
-    { userId: user.id, role: user.role || 'user' },
-    SECRET,
-    { expiresIn: EXPIRY }
-  );
-};
-
-const verifyToken = (token) => {
+const createTables = async () => {
   try {
-    return jwt.verify(token, SECRET);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        first_name VARCHAR(255) DEFAULT '',
+        last_name VARCHAR(255) DEFAULT '',
+        role VARCHAR(50) DEFAULT 'user',
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS tickets (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        title VARCHAR(255) NOT NULL,
+        description TEXT NOT NULL,
+        category VARCHAR(100) DEFAULT 'general',
+        priority VARCHAR(50) DEFAULT 'medium',
+        status VARCHAR(50) DEFAULT 'open',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS conversations (
+        id SERIAL PRIMARY KEY,
+        ticket_id INTEGER REFERENCES tickets(id) ON DELETE CASCADE,
+        title VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS messages (
+        id SERIAL PRIMARY KEY,
+        conversation_id INTEGER REFERENCES conversations(id) ON DELETE CASCADE,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        message_text TEXT NOT NULL,
+        is_from_ai BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS knowledge_base (
+        id SERIAL PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        content TEXT NOT NULL,
+        category VARCHAR(100) NOT NULL DEFAULT 'general',
+        keywords TEXT DEFAULT '',
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS knowledge_feedback (
+        id SERIAL PRIMARY KEY,
+        article_id INTEGER REFERENCES knowledge_base(id) ON DELETE CASCADE,
+        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        useful BOOLEAN NOT NULL,
+        comment TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.query(`
+      CREATE INDEX IF NOT EXISTS idx_knowledge_search
+      ON knowledge_base USING gin (to_tsvector('english', coalesce(title, '') || ' ' || coalesce(content, '') || ' ' || coalesce(keywords, '')))
+    `);
+
+    console.log('✅ Database tables checked and created successfully');
   } catch (err) {
-    return null;
+    console.error('Migration error:', err);
+    throw err;
   }
 };
 
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+if (require.main === module) {
+  createTables()
+    .then(() => process.exit(0))
+    .catch(() => process.exit(1));
+}
 
-  if (!token) {
-    return res.status(401).json({ error: true, message: 'Token required' });
-  }
-
-  const decoded = verifyToken(token);
-  if (!decoded) {
-    return res.status(403).json({ error: true, message: 'Invalid or expired token' });
-  }
-
-  req.userId = decoded.userId;
-  req.userRole = decoded.role || 'user';
-  next();
-};
-
-module.exports = {
-  generateToken,
-  verifyToken,
-  authenticateToken
-};
+module.exports = { createTables };

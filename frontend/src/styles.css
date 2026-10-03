@@ -17,10 +17,18 @@ const initialTicket = {
   priority: 'medium'
 };
 
+const initialKnowledgeForm = {
+  title: '',
+  content: '',
+  category: 'general',
+  keywords: ''
+};
+
 function App() {
   const [authMode, setAuthMode] = useState('login');
   const [authForm, setAuthForm] = useState(initialForm);
   const [ticketForm, setTicketForm] = useState(initialTicket);
+  const [knowledgeForm, setKnowledgeForm] = useState(initialKnowledgeForm);
   const [token, setToken] = useState(localStorage.getItem('tech_support_token') || '');
   const [user, setUser] = useState(() => {
     const userData = localStorage.getItem('tech_support_user');
@@ -43,6 +51,8 @@ function App() {
     categories: []
   });
   const [adminTickets, setAdminTickets] = useState([]);
+  const [knowledgeArticles, setKnowledgeArticles] = useState([]);
+  const [knowledgeSearch, setKnowledgeSearch] = useState('');
 
   const selectedTicket = useMemo(
     () => tickets.find((ticket) => ticket.id === Number(selectedTicketId)) || null,
@@ -50,16 +60,18 @@ function App() {
   );
 
   const isAdmin = user?.role === 'admin';
+  const canManageKnowledge = user?.role === 'admin' || user?.role === 'support';
 
   useEffect(() => {
     if (token) {
       loadProfile();
       loadTickets();
-      if (user?.role === 'admin') {
+      if (isAdmin) {
         loadAdminData();
       }
+      loadKnowledge();
     }
-  }, [token]);
+  }, [token, isAdmin]);
 
   const persistUser = (userData) => {
     setUser(userData);
@@ -86,21 +98,21 @@ function App() {
     setTicketForm((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleKnowledgeInput = (event) => {
+    const { name, value } = event.target;
+    setKnowledgeForm((prev) => ({ ...prev, [name]: value }));
+  };
+
   const loadProfile = async () => {
     if (!token) return;
 
     try {
       const response = await fetch(`${API_URL}/users/profile`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+        headers: { Authorization: `Bearer ${token}` }
       });
 
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || 'Erreur de profil');
-      }
-
+      if (!response.ok) throw new Error(data.message || 'Erreur de profil');
       persistUser(data.data);
     } catch (err) {
       console.error('Profile error:', err);
@@ -113,14 +125,11 @@ function App() {
 
     try {
       const response = await fetch(`${API_URL}/tickets`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+        headers: { Authorization: `Bearer ${token}` }
       });
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || 'Impossible de charger les tickets');
-      }
+      if (!response.ok) throw new Error(data.message || 'Impossible de charger les tickets');
+
       setTickets(data.data || []);
       if (!selectedTicketId && data.data?.length) {
         setSelectedTicketId(data.data[0].id);
@@ -135,14 +144,10 @@ function App() {
 
     try {
       const response = await fetch(`${API_URL}/chat/conversations/${conversationIdValue}/messages`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+        headers: { Authorization: `Bearer ${token}` }
       });
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || 'Impossible de charger les messages');
-      }
+      if (!response.ok) throw new Error(data.message || 'Impossible de charger les messages');
       setMessages(data.data || []);
     } catch (err) {
       showMessage('error', err.message);
@@ -150,16 +155,12 @@ function App() {
   };
 
   const loadAdminData = async () => {
-    if (!token) return;
+    if (!token || !isAdmin) return;
 
     try {
       const [statsResponse, ticketsResponse] = await Promise.all([
-        fetch(`${API_URL}/admin/stats`, {
-          headers: { Authorization: `Bearer ${token}` }
-        }),
-        fetch(`${API_URL}/admin/tickets`, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
+        fetch(`${API_URL}/admin/stats`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API_URL}/admin/tickets`, { headers: { Authorization: `Bearer ${token}` } })
       ]);
 
       const statsData = await statsResponse.json();
@@ -171,6 +172,20 @@ function App() {
 
       setAdminStats(statsData.data || {});
       setAdminTickets(ticketsData.data || []);
+    } catch (err) {
+      showMessage('error', err.message);
+    }
+  };
+
+  const loadKnowledge = async (query = '') => {
+    if (!token) return;
+
+    try {
+      const url = query ? `${API_URL}/knowledge/search?q=${encodeURIComponent(query)}` : `${API_URL}/knowledge`;
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Impossible de charger les connaissances');
+      setKnowledgeArticles(data.data || []);
     } catch (err) {
       showMessage('error', err.message);
     }
@@ -190,16 +205,12 @@ function App() {
 
       const response = await fetch(`${API_URL}${endpoint}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
 
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || 'Authentification impossible');
-      }
+      if (!response.ok) throw new Error(data.message || 'Authentification impossible');
 
       const authToken = data.data.token;
       localStorage.setItem('tech_support_token', authToken);
@@ -230,16 +241,12 @@ function App() {
       });
 
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || 'Impossible de créer le ticket');
-      }
+      if (!response.ok) throw new Error(data.message || 'Impossible de créer le ticket');
 
       setTicketForm(initialTicket);
       showMessage('success', 'Ticket créé avec succès');
       await loadTickets();
-      if (isAdmin) {
-        await loadAdminData();
-      }
+      if (isAdmin) await loadAdminData();
     } catch (err) {
       showMessage('error', err.message);
     } finally {
@@ -256,16 +263,11 @@ function App() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({
-          ticketId,
-          title: `Conversation pour le ticket #${ticketId}`
-        })
+        body: JSON.stringify({ ticketId, title: `Conversation pour le ticket #${ticketId}` })
       });
 
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || 'Impossible d’ouvrir la conversation');
-      }
+      if (!response.ok) throw new Error(data.message || 'Impossible d’ouvrir la conversation');
 
       setConversationId(data.data.id);
       await loadMessages(data.data.id);
@@ -289,15 +291,11 @@ function App() {
       });
 
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || 'Impossible d’envoyer le message');
-      }
+      if (!response.ok) throw new Error(data.message || 'Impossible d’envoyer le message');
 
       setMessageInput('');
       await loadMessages(conversationId);
-      if (isAdmin) {
-        await loadAdminData();
-      }
+      if (isAdmin) await loadAdminData();
     } catch (err) {
       showMessage('error', err.message);
     }
@@ -317,13 +315,58 @@ function App() {
       });
 
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || 'Impossible de mettre à jour le statut');
-      }
+      if (!response.ok) throw new Error(data.message || 'Impossible de mettre à jour le statut');
 
       showMessage('success', 'Statut du ticket mis à jour');
       await loadAdminData();
       await loadTickets();
+    } catch (err) {
+      showMessage('error', err.message);
+    }
+  };
+
+  const saveKnowledgeArticle = async (event) => {
+    event.preventDefault();
+
+    try {
+      const method = knowledgeForm.id ? 'PATCH' : 'POST';
+      const url = knowledgeForm.id
+        ? `${API_URL}/knowledge/${knowledgeForm.id}`
+        : `${API_URL}/knowledge`;
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(knowledgeForm)
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Impossible de sauvegarder la base de connaissances');
+
+      setKnowledgeForm(initialKnowledgeForm);
+      await loadKnowledge(knowledgeSearch || '');
+      showMessage('success', 'Article de connaissance enregistré');
+    } catch (err) {
+      showMessage('error', err.message);
+    }
+  };
+
+  const deleteKnowledgeArticle = async (articleId) => {
+    try {
+      const response = await fetch(`${API_URL}/knowledge/${articleId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Impossible de supprimer l’article');
+
+      setKnowledgeForm(initialKnowledgeForm);
+      await loadKnowledge(knowledgeSearch || '');
+      showMessage('success', 'Article supprimé');
     } catch (err) {
       showMessage('error', err.message);
     }
@@ -338,15 +381,10 @@ function App() {
     setSelectedTicketId(null);
     setConversationId(null);
     setMessages([]);
-    setAdminStats({
-      totalUsers: 0,
-      totalTickets: 0,
-      open: 0,
-      inProgress: 0,
-      closed: 0,
-      categories: []
-    });
+    setAdminStats({ totalUsers: 0, totalTickets: 0, open: 0, inProgress: 0, closed: 0, categories: [] });
     setAdminTickets([]);
+    setKnowledgeArticles([]);
+    setKnowledgeSearch('');
     setError('');
     setSuccess('');
   };
@@ -401,7 +439,7 @@ function App() {
     );
   }
 
-  if (isAdmin) {
+  if (isAdmin || user?.role === 'support') {
     return (
       <div className="admin-shell">
         <aside className="admin-sidebar">
@@ -409,12 +447,12 @@ function App() {
             <div className="brand-badge">AI</div>
             <div>
               <h2>Tech Support</h2>
-              <span>Admin Panel</span>
+              <span>{user?.role === 'admin' ? 'Admin Panel' : 'Support Panel'}</span>
             </div>
           </div>
 
           <div className="admin-user-card">
-            <strong>{user?.firstName || user?.first_name || 'Admin'}</strong>
+            <strong>{user?.firstName || user?.first_name || 'Agent'}</strong>
             <span>{user?.email}</span>
             <small>{user?.role}</small>
           </div>
@@ -510,6 +548,113 @@ function App() {
               </table>
             </div>
           </section>
+
+          {canManageKnowledge && (
+            <section className="knowledge-panel">
+              <div className="table-header">
+                <h3>Base de connaissances</h3>
+              </div>
+
+              <div className="knowledge-toolbar">
+                <input
+                  type="text"
+                  value={knowledgeSearch}
+                  onChange={(e) => setKnowledgeSearch(e.target.value)}
+                  placeholder="Rechercher dans la base de connaissances"
+                />
+                <button className="primary-btn" onClick={() => loadKnowledge(knowledgeSearch)}>
+                  Rechercher
+                </button>
+              </div>
+
+              <form onSubmit={saveKnowledgeArticle} className="knowledge-form stacked-form">
+                <input
+                  type="text"
+                  name="title"
+                  value={knowledgeForm.title}
+                  onChange={handleKnowledgeInput}
+                  placeholder="Titre de l’article"
+                  required
+                />
+                <select name="category" value={knowledgeForm.category} onChange={handleKnowledgeInput}>
+                  <option value="general">Général</option>
+                  <option value="authentication">Authentification</option>
+                  <option value="network">Réseau</option>
+                  <option value="software">Logiciel</option>
+                  <option value="hardware">Matériel</option>
+                </select>
+                <input
+                  type="text"
+                  name="keywords"
+                  value={knowledgeForm.keywords}
+                  onChange={handleKnowledgeInput}
+                  placeholder="Mots-clés séparés par des virgules"
+                />
+                <textarea
+                  name="content"
+                  rows="6"
+                  value={knowledgeForm.content}
+                  onChange={handleKnowledgeInput}
+                  placeholder="Contenu de la solution"
+                  required
+                />
+
+                <div className="knowledge-actions">
+                  <button className="primary-btn" type="submit">
+                    {knowledgeForm.id ? 'Mettre à jour' : 'Ajouter à la base'}
+                  </button>
+                  {knowledgeForm.id && (
+                    <button
+                      type="button"
+                      className="secondary-btn"
+                      onClick={() => setKnowledgeForm(initialKnowledgeForm)}
+                    >
+                      Annuler
+                    </button>
+                  )}
+                </div>
+              </form>
+
+              <div className="knowledge-list">
+                {knowledgeArticles.length === 0 ? (
+                  <div className="empty-box">Aucune connaissance trouvée.</div>
+                ) : (
+                  knowledgeArticles.map((article) => (
+                    <article key={article.id} className="knowledge-item">
+                      <div className="knowledge-item-top">
+                        <strong>{article.title}</strong>
+                        <span className="badge knowledge-tag">{article.category}</span>
+                      </div>
+                      <p>{article.content}</p>
+                      <small>{article.keywords || 'Sans mots-clés'}</small>
+                      <div className="knowledge-item-actions">
+                        <button
+                          className="mini-btn"
+                          type="button"
+                          onClick={() => setKnowledgeForm({
+                            id: article.id,
+                            title: article.title,
+                            content: article.content,
+                            category: article.category,
+                            keywords: article.keywords || ''
+                          })}
+                        >
+                          Modifier
+                        </button>
+                        <button
+                          className="danger-btn"
+                          type="button"
+                          onClick={() => deleteKnowledgeArticle(article.id)}
+                        >
+                          Supprimer
+                        </button>
+                      </div>
+                    </article>
+                  ))
+                )}
+              </div>
+            </section>
+          )}
         </main>
       </div>
     );
