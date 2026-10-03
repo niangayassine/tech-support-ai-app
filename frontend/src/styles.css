@@ -1,0 +1,469 @@
+import { useEffect, useMemo, useState } from 'react';
+
+const API_URL = 'http://localhost:3000/api';
+
+const initialForm = {
+  email: '',
+  password: '',
+  firstName: '',
+  lastName: ''
+};
+
+const initialTicket = {
+  title: '',
+  description: '',
+  category: 'general',
+  priority: 'medium'
+};
+
+function App() {
+  const [authMode, setAuthMode] = useState('login');
+  const [authForm, setAuthForm] = useState(initialForm);
+  const [ticketForm, setTicketForm] = useState(initialTicket);
+  const [token, setToken] = useState(localStorage.getItem('tech_support_token') || '');
+  const [user, setUser] = useState(null);
+  const [tickets, setTickets] = useState([]);
+  const [selectedTicketId, setSelectedTicketId] = useState(null);
+  const [conversationId, setConversationId] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [messageInput, setMessageInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const selectedTicket = useMemo(
+    () => tickets.find((ticket) => ticket.id === Number(selectedTicketId)) || null,
+    [tickets, selectedTicketId]
+  );
+
+  useEffect(() => {
+    if (token) {
+      loadProfile();
+      loadTickets();
+    }
+  }, [token]);
+
+  const showMessage = (type, message) => {
+    if (type === 'error') {
+      setError(message);
+      setSuccess('');
+    } else {
+      setSuccess(message);
+      setError('');
+    }
+  };
+
+  const handleAuthInput = (event) => {
+    const { name, value } = event.target;
+    setAuthForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleTicketInput = (event) => {
+    const { name, value } = event.target;
+    setTicketForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const loadProfile = async () => {
+    try {
+      const response = await fetch(`${API_URL}/users/profile`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Erreur de profil');
+      }
+
+      setUser(data.data);
+    } catch (err) {
+      console.error(err);
+      logout();
+    }
+  };
+
+  const loadTickets = async () => {
+    try {
+      const response = await fetch(`${API_URL}/tickets`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Impossible de charger les tickets');
+      }
+      setTickets(data.data || []);
+      if (!selectedTicketId && data.data?.length) {
+        setSelectedTicketId(data.data[0].id);
+      }
+    } catch (err) {
+      showMessage('error', err.message);
+    }
+  };
+
+  const loadMessages = async (conversationIdValue) => {
+    if (!conversationIdValue) return;
+
+    try {
+      const response = await fetch(`${API_URL}/chat/conversations/${conversationIdValue}/messages`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Impossible de charger les messages');
+      }
+      setMessages(data.data || []);
+    } catch (err) {
+      showMessage('error', err.message);
+    }
+  };
+
+  const handleAuthSubmit = async (event) => {
+    event.preventDefault();
+    setLoading(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const endpoint = authMode === 'login' ? '/auth/login' : '/auth/register';
+      const payload = authMode === 'login'
+        ? { email: authForm.email, password: authForm.password }
+        : authForm;
+
+      const response = await fetch(`${API_URL}${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Authentification impossible');
+      }
+
+      const authToken = data.data.token;
+      localStorage.setItem('tech_support_token', authToken);
+      setToken(authToken);
+      setUser(data.data.user);
+      setSuccess(authMode === 'login' ? 'Connexion réussie' : 'Compte créé avec succès');
+      setAuthForm(initialForm);
+    } catch (err) {
+      showMessage('error', err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTicketSubmit = async (event) => {
+    event.preventDefault();
+    if (!token) return;
+
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_URL}/tickets`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(ticketForm)
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Impossible de créer le ticket');
+      }
+
+      setTicketForm(initialTicket);
+      showMessage('success', 'Ticket créé avec succès');
+      await loadTickets();
+    } catch (err) {
+      showMessage('error', err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openConversation = async (ticketId) => {
+    setSelectedTicketId(ticketId);
+    try {
+      const response = await fetch(`${API_URL}/chat/conversations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          ticketId,
+          title: `Conversation pour le ticket #${ticketId}`
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Impossible d’ouvrir la conversation');
+      }
+
+      setConversationId(data.data.id);
+      await loadMessages(data.data.id);
+    } catch (err) {
+      showMessage('error', err.message);
+    }
+  };
+
+  const sendMessage = async (event) => {
+    event.preventDefault();
+    if (!messageInput.trim() || !conversationId) return;
+
+    try {
+      const response = await fetch(`${API_URL}/chat/conversations/${conversationId}/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ message: messageInput })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Impossible d’envoyer le message');
+      }
+
+      setMessageInput('');
+      await loadMessages(conversationId);
+    } catch (err) {
+      showMessage('error', err.message);
+    }
+  };
+
+  const logout = () => {
+    localStorage.removeItem('tech_support_token');
+    setToken('');
+    setUser(null);
+    setTickets([]);
+    setSelectedTicketId(null);
+    setConversationId(null);
+    setMessages([]);
+    setError('');
+    setSuccess('');
+  };
+
+  if (!token) {
+    return (
+      <div className="auth-page">
+        <div className="auth-card">
+          <div className="auth-header">
+            <div className="brand-badge">AI</div>
+            <h1>Tech Support AI</h1>
+            <p>Assistance technologique intelligente</p>
+          </div>
+
+          <div className="switcher">
+            <button
+              className={authMode === 'login' ? 'active' : ''}
+              onClick={() => setAuthMode('login')}
+            >
+              Connexion
+            </button>
+            <button
+              className={authMode === 'register' ? 'active' : ''}
+              onClick={() => setAuthMode('register')}
+            >
+              Inscription
+            </button>
+          </div>
+
+          <form onSubmit={handleAuthSubmit} className="stacked-form">
+            {authMode === 'register' && (
+              <>
+                <input
+                  type="text"
+                  name="firstName"
+                  value={authForm.firstName}
+                  onChange={handleAuthInput}
+                  placeholder="Prénom"
+                />
+                <input
+                  type="text"
+                  name="lastName"
+                  value={authForm.lastName}
+                  onChange={handleAuthInput}
+                  placeholder="Nom"
+                />
+              </>
+            )}
+
+            <input
+              type="email"
+              name="email"
+              value={authForm.email}
+              onChange={handleAuthInput}
+              placeholder="Email"
+              required
+            />
+
+            <input
+              type="password"
+              name="password"
+              value={authForm.password}
+              onChange={handleAuthInput}
+              placeholder="Mot de passe"
+              required
+            />
+
+            {error && <div className="alert error">{error}</div>}
+            {success && <div className="alert success">{success}</div>}
+
+            <button disabled={loading} className="primary-btn">
+              {loading ? 'Chargement...' : authMode === 'login' ? 'Se connecter' : 'Créer un compte'}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="dashboard">
+      <aside className="sidebar">
+        <div className="sidebar-top">
+          <div className="brand-badge">AI</div>
+          <h2>Tech Support</h2>
+        </div>
+
+        <div className="user-box">
+          <strong>{user?.first_name || 'Utilisateur'}</strong>
+          <span>{user?.email}</span>
+        </div>
+
+        <button className="logout-btn" onClick={logout}>Déconnexion</button>
+
+        <div className="ticket-panel">
+          <h3>Créer un ticket</h3>
+          <form onSubmit={handleTicketSubmit} className="stacked-form small">
+            <input
+              type="text"
+              name="title"
+              value={ticketForm.title}
+              onChange={handleTicketInput}
+              placeholder="Titre du problème"
+              required
+            />
+            <textarea
+              name="description"
+              rows="4"
+              value={ticketForm.description}
+              onChange={handleTicketInput}
+              placeholder="Décrivez votre problème"
+              required
+            />
+            <select name="category" value={ticketForm.category} onChange={handleTicketInput}>
+              <option value="general">Général</option>
+              <option value="authentication">Authentification</option>
+              <option value="network">Réseau</option>
+              <option value="software">Logiciel</option>
+              <option value="hardware">Matériel</option>
+            </select>
+            <select name="priority" value={ticketForm.priority} onChange={handleTicketInput}>
+              <option value="low">Faible</option>
+              <option value="medium">Moyenne</option>
+              <option value="high">Élevée</option>
+              <option value="critical">Critique</option>
+            </select>
+
+            <button className="primary-btn" type="submit" disabled={loading}>
+              {loading ? '...' : 'Soumettre'}
+            </button>
+          </form>
+        </div>
+      </aside>
+
+      <main className="content">
+        <div className="header-bar">
+          <h1>Mes demandes</h1>
+        </div>
+
+        {error && <div className="alert error">{error}</div>}
+        {success && <div className="alert success">{success}</div>}
+
+        <div className="content-grid">
+          <section className="ticket-list">
+            {tickets.length === 0 ? (
+              <div className="empty-box">Aucun ticket pour le moment.</div>
+            ) : (
+              tickets.map((ticket) => (
+                <button
+                  key={ticket.id}
+                  className={`ticket-card ${selectedTicketId === ticket.id ? 'selected' : ''}`}
+                  onClick={() => openConversation(ticket.id)}
+                >
+                  <div className="ticket-card-top">
+                    <strong>{ticket.title}</strong>
+                    <span className={`badge ${ticket.status}`}>{ticket.status}</span>
+                  </div>
+                  <p>{ticket.description}</p>
+                  <small>
+                    {ticket.category} • {ticket.priority}
+                  </small>
+                </button>
+              ))
+            )}
+          </section>
+
+          <section className="chat-panel">
+            {selectedTicket ? (
+              <>
+                <div className="chat-header">
+                  <div>
+                    <h3>{selectedTicket.title}</h3>
+                    <span>{selectedTicket.category}</span>
+                  </div>
+                  <span className={`badge ${selectedTicket.status}`}>{selectedTicket.status}</span>
+                </div>
+
+                <div className="message-list">
+                  {messages.length === 0 ? (
+                    <div className="empty-box">Aucune discussion pour ce ticket.</div>
+                  ) : (
+                    messages.map((msg, index) => (
+                      <div
+                        key={`${msg.id || index}-${msg.created_at || index}`}
+                        className={`message ${msg.is_from_ai ? 'ai' : 'user'}`}
+                      >
+                        <div className="message-body">
+                          <strong>{msg.is_from_ai ? 'IA' : 'Vous'}</strong>
+                          <p>{msg.message_text}</p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <form onSubmit={sendMessage} className="chat-form">
+                  <input
+                    type="text"
+                    value={messageInput}
+                    onChange={(e) => setMessageInput(e.target.value)}
+                    placeholder="Décrivez votre problème ou demandez une aide..."
+                  />
+                  <button className="primary-btn" type="submit">Envoyer</button>
+                </form>
+              </>
+            ) : (
+              <div className="empty-box large">Sélectionnez un ticket pour commencer.</div>
+            )}
+          </section>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+export default App;
