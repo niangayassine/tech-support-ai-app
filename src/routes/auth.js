@@ -1,125 +1,122 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
-const bcrypt = require('bcryptjs');
-const { generateToken, authenticateToken } = require('../utils/jwt');
-const { validateEmail, validatePassword } = require('../utils/validators');
+const { authenticateToken } = require('../utils/jwt');
 
-// Register
-router.post('/register', async (req, res) => {
+router.use(authenticateToken);
+
+const ensureAdmin = (req, res, next) => {
+  if (req.userRole !== 'admin') {
+    return res.status(403).json({
+      error: true,
+      message: 'Admin access required'
+    });
+  }
+
+  next();
+};
+
+router.get('/stats', ensureAdmin, async (req, res) => {
   try {
-    const { email, password, firstName, lastName } = req.body;
+    const totalUsers = await db.query('SELECT COUNT(*) AS count FROM users');
+    const totalTickets = await db.query('SELECT COUNT(*) AS count FROM tickets');
+    const openTickets = await db.query("SELECT COUNT(*) AS count FROM tickets WHERE status = 'open'");
+    const inProgressTickets = await db.query("SELECT COUNT(*) AS count FROM tickets WHERE status = 'in_progress'");
+    const closedTickets = await db.query("SELECT COUNT(*) AS count FROM tickets WHERE status = 'closed'");
 
-    // Validation
-    if (!email || !validateEmail(email)) {
-      return res.status(400).json({ error: true, message: 'Invalid email' });
-    }
-    if (!password || !validatePassword(password)) {
+    const categorySummary = await db.query(`
+      SELECT category, COUNT(*) AS count
+      FROM tickets
+      GROUP BY category
+      ORDER BY count DESC
+    `);
+
+    res.status(200).json({
+      error: false,
+      data: {
+        totalUsers: Number(totalUsers.rows[0].count),
+        totalTickets: Number(totalTickets.rows[0].count),
+        open: Number(openTickets.rows[0].count),
+        inProgress: Number(inProgressTickets.rows[0].count),
+        closed: Number(closedTickets.rows[0].count),
+        categories: categorySummary.rows
+      }
+    });
+  } catch (err) {
+    console.error('Admin stats error:', err);
+    res.status(500).json({ error: true, message: 'Internal server error' });
+  }
+});
+
+router.get('/tickets', ensureAdmin, async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT t.*, u.email, u.first_name, u.last_name, u.role
+      FROM tickets t
+      LEFT JOIN users u ON u.id = t.user_id
+      ORDER BY t.created_at DESC
+    `);
+
+    res.status(200).json({
+      error: false,
+      data: result.rows
+    });
+  } catch (err) {
+    console.error('Admin tickets error:', err);
+    res.status(500).json({ error: true, message: 'Internal server error' });
+  }
+});
+
+router.get('/users', ensureAdmin, async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT id, email, first_name, last_name, role, is_active, created_at
+      FROM users
+      ORDER BY created_at DESC
+    `);
+
+    res.status(200).json({
+      error: false,
+      data: result.rows
+    });
+  } catch (err) {
+    console.error('Admin users error:', err);
+    res.status(500).json({ error: true, message: 'Internal server error' });
+  }
+});
+
+router.patch('/tickets/:id/status', ensureAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    const allowedStatuses = ['open', 'in_progress', 'closed'];
+    if (!allowedStatuses.includes(status)) {
       return res.status(400).json({
         error: true,
-        message: 'Password must be at least 8 characters with uppercase, lowercase, and number'
+        message: 'Invalid status value'
       });
     }
 
-    // Check if user exists
-    const userExists = await db.query('SELECT id FROM users WHERE email = $1', [email]);
-    if (userExists.rows.length > 0) {
-      return res.status(409).json({ error: true, message: 'Email already registered' });
-    }
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Create user
     const result = await db.query(
-      `INSERT INTO users (email, password_hash, first_name, last_name)
-       VALUES ($1, $2, $3, $4) RETURNING id, email, first_name, last_name`,
-      [email, hashedPassword, firstName || '', lastName || '']
-    );
-
-    const user = result.rows[0];
-    const token = generateToken(user.id);
-
-    res.status(201).json({
-      error: false,
-      message: 'User registered successfully',
-      data: {
-        user,
-        token
-      }
-    });
-  } catch (err) {
-    console.error('Register error:', err);
-    res.status(500).json({ error: true, message: 'Internal server error' });
-  }
-});
-
-// Login
-router.post('/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({ error: true, message: 'Email and password required' });
-    }
-
-    // Find user
-    const result = await db.query(
-      'SELECT id, email, password_hash, first_name, last_name FROM users WHERE email = $1',
-      [email]
+      `UPDATE tickets
+       SET status = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2
+       RETURNING *`,
+      [status, id]
     );
 
     if (result.rows.length === 0) {
-      return res.status(401).json({ error: true, message: 'Invalid credentials' });
-    }
-
-    const user = result.rows[0];
-
-    // Verify password
-    const isValidPassword = await bcrypt.compare(password, user.password_hash);
-    if (!isValidPassword) {
-      return res.status(401).json({ error: true, message: 'Invalid credentials' });
-    }
-
-    const token = generateToken(user.id);
-
-    res.status(200).json({
-      error: false,
-      message: 'Login successful',
-      data: {
-        user: {
-          id: user.id,
-          email: user.email,
-          firstName: user.first_name,
-          lastName: user.last_name
-        },
-        token
-      }
-    });
-  } catch (err) {
-    console.error('Login error:', err);
-    res.status(500).json({ error: true, message: 'Internal server error' });
-  }
-});
-
-// Verify Token
-router.get('/verify', authenticateToken, async (req, res) => {
-  try {
-    const result = await db.query(
-      'SELECT id, email, first_name, last_name, role FROM users WHERE id = $1',
-      [req.userId]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: true, message: 'User not found' });
+      return res.status(404).json({ error: true, message: 'Ticket not found' });
     }
 
     res.status(200).json({
       error: false,
+      message: 'Ticket status updated successfully',
       data: result.rows[0]
     });
   } catch (err) {
-    console.error('Verify error:', err);
+    console.error('Update ticket status error:', err);
     res.status(500).json({ error: true, message: 'Internal server error' });
   }
 });

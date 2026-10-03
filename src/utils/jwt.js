@@ -1,42 +1,138 @@
-const jwt = require('jsonwebtoken');
-const dotenv = require('dotenv');
+const express = require('express');
+const router = express.Router();
+const db = require('../config/db');
+const bcrypt = require('bcryptjs');
+const { generateToken, authenticateToken } = require('../utils/jwt');
+const { validateEmail, validatePassword } = require('../utils/validators');
 
-dotenv.config();
+const validRoles = ['user', 'admin', 'support'];
 
-const SECRET = process.env.JWT_SECRET || 'your_secret_key';
-const EXPIRY = process.env.JWT_EXPIRE || '7d';
-
-const generateToken = (userId) => {
-  return jwt.sign({ userId }, SECRET, { expiresIn: EXPIRY });
+const normalizeRole = (role) => {
+  if (validRoles.includes(role)) {
+    return role;
+  }
+  return 'user';
 };
 
-const verifyToken = (token) => {
+// Register
+router.post('/register', async (req, res) => {
   try {
-    return jwt.verify(token, SECRET);
+    const { email, password, firstName, lastName, role } = req.body;
+
+    // Validation
+    if (!email || !validateEmail(email)) {
+      return res.status(400).json({ error: true, message: 'Invalid email' });
+    }
+    if (!password || !validatePassword(password)) {
+      return res.status(400).json({
+        error: true,
+        message: 'Password must be at least 8 characters with uppercase, lowercase, and number'
+      });
+    }
+
+    // Check if user exists
+    const userExists = await db.query('SELECT id FROM users WHERE email = $1', [email]);
+    if (userExists.rows.length > 0) {
+      return res.status(409).json({ error: true, message: 'Email already registered' });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const finalRole = normalizeRole(role);
+
+    // Create user
+    const result = await db.query(
+      `INSERT INTO users (email, password_hash, first_name, last_name, role)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id, email, first_name, last_name, role`,
+      [email, hashedPassword, firstName || '', lastName || '', finalRole]
+    );
+
+    const user = result.rows[0];
+    const token = generateToken(user);
+
+    res.status(201).json({
+      error: false,
+      message: 'User registered successfully',
+      data: {
+        user,
+        token
+      }
+    });
   } catch (err) {
-    return null;
+    console.error('Register error:', err);
+    res.status(500).json({ error: true, message: 'Internal server error' });
   }
-};
+});
 
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+// Login
+router.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
 
-  if (!token) {
-    return res.status(401).json({ error: true, message: 'Token required' });
+    if (!email || !password) {
+      return res.status(400).json({ error: true, message: 'Email and password required' });
+    }
+
+    // Find user
+    const result = await db.query(
+      'SELECT id, email, password_hash, first_name, last_name, role FROM users WHERE email = $1',
+      [email]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: true, message: 'Invalid credentials' });
+    }
+
+    const user = result.rows[0];
+
+    // Verify password
+    const isValidPassword = await bcrypt.compare(password, user.password_hash);
+    if (!isValidPassword) {
+      return res.status(401).json({ error: true, message: 'Invalid credentials' });
+    }
+
+    const token = generateToken(user);
+
+    res.status(200).json({
+      error: false,
+      message: 'Login successful',
+      data: {
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          role: user.role
+        },
+        token
+      }
+    });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: true, message: 'Internal server error' });
   }
+});
 
-  const decoded = verifyToken(token);
-  if (!decoded) {
-    return res.status(403).json({ error: true, message: 'Invalid or expired token' });
+// Verify Token
+router.get('/verify', authenticateToken, async (req, res) => {
+  try {
+    const result = await db.query(
+      'SELECT id, email, first_name, last_name, role FROM users WHERE id = $1',
+      [req.userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: true, message: 'User not found' });
+    }
+
+    res.status(200).json({
+      error: false,
+      data: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Verify error:', err);
+    res.status(500).json({ error: true, message: 'Internal server error' });
   }
+});
 
-  req.userId = decoded.userId;
-  next();
-};
-
-module.exports = {
-  generateToken,
-  verifyToken,
-  authenticateToken
-};
+module.exports = router;

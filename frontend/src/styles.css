@@ -6,7 +6,8 @@ const initialForm = {
   email: '',
   password: '',
   firstName: '',
-  lastName: ''
+  lastName: '',
+  role: 'user'
 };
 
 const initialTicket = {
@@ -21,7 +22,10 @@ function App() {
   const [authForm, setAuthForm] = useState(initialForm);
   const [ticketForm, setTicketForm] = useState(initialTicket);
   const [token, setToken] = useState(localStorage.getItem('tech_support_token') || '');
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() => {
+    const userData = localStorage.getItem('tech_support_user');
+    return userData ? JSON.parse(userData) : null;
+  });
   const [tickets, setTickets] = useState([]);
   const [selectedTicketId, setSelectedTicketId] = useState(null);
   const [conversationId, setConversationId] = useState(null);
@@ -30,18 +34,37 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [adminStats, setAdminStats] = useState({
+    totalUsers: 0,
+    totalTickets: 0,
+    open: 0,
+    inProgress: 0,
+    closed: 0,
+    categories: []
+  });
+  const [adminTickets, setAdminTickets] = useState([]);
 
   const selectedTicket = useMemo(
     () => tickets.find((ticket) => ticket.id === Number(selectedTicketId)) || null,
     [tickets, selectedTicketId]
   );
 
+  const isAdmin = user?.role === 'admin';
+
   useEffect(() => {
     if (token) {
       loadProfile();
       loadTickets();
+      if (user?.role === 'admin') {
+        loadAdminData();
+      }
     }
   }, [token]);
+
+  const persistUser = (userData) => {
+    setUser(userData);
+    localStorage.setItem('tech_support_user', JSON.stringify(userData));
+  };
 
   const showMessage = (type, message) => {
     if (type === 'error') {
@@ -64,6 +87,8 @@ function App() {
   };
 
   const loadProfile = async () => {
+    if (!token) return;
+
     try {
       const response = await fetch(`${API_URL}/users/profile`, {
         headers: {
@@ -76,14 +101,16 @@ function App() {
         throw new Error(data.message || 'Erreur de profil');
       }
 
-      setUser(data.data);
+      persistUser(data.data);
     } catch (err) {
-      console.error(err);
+      console.error('Profile error:', err);
       logout();
     }
   };
 
   const loadTickets = async () => {
+    if (!token) return;
+
     try {
       const response = await fetch(`${API_URL}/tickets`, {
         headers: {
@@ -104,7 +131,7 @@ function App() {
   };
 
   const loadMessages = async (conversationIdValue) => {
-    if (!conversationIdValue) return;
+    if (!conversationIdValue || !token) return;
 
     try {
       const response = await fetch(`${API_URL}/chat/conversations/${conversationIdValue}/messages`, {
@@ -117,6 +144,33 @@ function App() {
         throw new Error(data.message || 'Impossible de charger les messages');
       }
       setMessages(data.data || []);
+    } catch (err) {
+      showMessage('error', err.message);
+    }
+  };
+
+  const loadAdminData = async () => {
+    if (!token) return;
+
+    try {
+      const [statsResponse, ticketsResponse] = await Promise.all([
+        fetch(`${API_URL}/admin/stats`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        fetch(`${API_URL}/admin/tickets`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+      ]);
+
+      const statsData = await statsResponse.json();
+      const ticketsData = await ticketsResponse.json();
+
+      if (!statsResponse.ok || !ticketsResponse.ok) {
+        throw new Error(statsData.message || ticketsData.message || 'Impossible de charger le dashboard admin');
+      }
+
+      setAdminStats(statsData.data || {});
+      setAdminTickets(ticketsData.data || []);
     } catch (err) {
       showMessage('error', err.message);
     }
@@ -150,7 +204,7 @@ function App() {
       const authToken = data.data.token;
       localStorage.setItem('tech_support_token', authToken);
       setToken(authToken);
-      setUser(data.data.user);
+      persistUser(data.data.user);
       setSuccess(authMode === 'login' ? 'Connexion réussie' : 'Compte créé avec succès');
       setAuthForm(initialForm);
     } catch (err) {
@@ -183,6 +237,9 @@ function App() {
       setTicketForm(initialTicket);
       showMessage('success', 'Ticket créé avec succès');
       await loadTickets();
+      if (isAdmin) {
+        await loadAdminData();
+      }
     } catch (err) {
       showMessage('error', err.message);
     } finally {
@@ -238,6 +295,35 @@ function App() {
 
       setMessageInput('');
       await loadMessages(conversationId);
+      if (isAdmin) {
+        await loadAdminData();
+      }
+    } catch (err) {
+      showMessage('error', err.message);
+    }
+  };
+
+  const updateTicketStatus = async (ticketId, newStatus) => {
+    if (!isAdmin) return;
+
+    try {
+      const response = await fetch(`${API_URL}/admin/tickets/${ticketId}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ status: newStatus })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Impossible de mettre à jour le statut');
+      }
+
+      showMessage('success', 'Statut du ticket mis à jour');
+      await loadAdminData();
+      await loadTickets();
     } catch (err) {
       showMessage('error', err.message);
     }
@@ -245,12 +331,22 @@ function App() {
 
   const logout = () => {
     localStorage.removeItem('tech_support_token');
+    localStorage.removeItem('tech_support_user');
     setToken('');
     setUser(null);
     setTickets([]);
     setSelectedTicketId(null);
     setConversationId(null);
     setMessages([]);
+    setAdminStats({
+      totalUsers: 0,
+      totalTickets: 0,
+      open: 0,
+      inProgress: 0,
+      closed: 0,
+      categories: []
+    });
+    setAdminTickets([]);
     setError('');
     setSuccess('');
   };
@@ -266,16 +362,10 @@ function App() {
           </div>
 
           <div className="switcher">
-            <button
-              className={authMode === 'login' ? 'active' : ''}
-              onClick={() => setAuthMode('login')}
-            >
+            <button className={authMode === 'login' ? 'active' : ''} onClick={() => setAuthMode('login')}>
               Connexion
             </button>
-            <button
-              className={authMode === 'register' ? 'active' : ''}
-              onClick={() => setAuthMode('register')}
-            >
+            <button className={authMode === 'register' ? 'active' : ''} onClick={() => setAuthMode('register')}>
               Inscription
             </button>
           </div>
@@ -283,40 +373,21 @@ function App() {
           <form onSubmit={handleAuthSubmit} className="stacked-form">
             {authMode === 'register' && (
               <>
-                <input
-                  type="text"
-                  name="firstName"
-                  value={authForm.firstName}
-                  onChange={handleAuthInput}
-                  placeholder="Prénom"
-                />
-                <input
-                  type="text"
-                  name="lastName"
-                  value={authForm.lastName}
-                  onChange={handleAuthInput}
-                  placeholder="Nom"
-                />
+                <input type="text" name="firstName" value={authForm.firstName} onChange={handleAuthInput} placeholder="Prénom" />
+                <input type="text" name="lastName" value={authForm.lastName} onChange={handleAuthInput} placeholder="Nom" />
               </>
             )}
 
-            <input
-              type="email"
-              name="email"
-              value={authForm.email}
-              onChange={handleAuthInput}
-              placeholder="Email"
-              required
-            />
+            {authMode === 'register' && (
+              <select name="role" value={authForm.role} onChange={handleAuthInput}>
+                <option value="user">Utilisateur</option>
+                <option value="admin">Administrateur</option>
+                <option value="support">Support</option>
+              </select>
+            )}
 
-            <input
-              type="password"
-              name="password"
-              value={authForm.password}
-              onChange={handleAuthInput}
-              placeholder="Mot de passe"
-              required
-            />
+            <input type="email" name="email" value={authForm.email} onChange={handleAuthInput} placeholder="Email" required />
+            <input type="password" name="password" value={authForm.password} onChange={handleAuthInput} placeholder="Mot de passe" required />
 
             {error && <div className="alert error">{error}</div>}
             {success && <div className="alert success">{success}</div>}
@@ -330,6 +401,120 @@ function App() {
     );
   }
 
+  if (isAdmin) {
+    return (
+      <div className="admin-shell">
+        <aside className="admin-sidebar">
+          <div className="admin-brand">
+            <div className="brand-badge">AI</div>
+            <div>
+              <h2>Tech Support</h2>
+              <span>Admin Panel</span>
+            </div>
+          </div>
+
+          <div className="admin-user-card">
+            <strong>{user?.firstName || user?.first_name || 'Admin'}</strong>
+            <span>{user?.email}</span>
+            <small>{user?.role}</small>
+          </div>
+
+          <button className="logout-btn" onClick={logout}>Déconnexion</button>
+        </aside>
+
+        <main className="admin-main">
+          <header className="admin-header">
+            <div>
+              <p className="eyebrow">Tableau de bord</p>
+              <h1>Administration</h1>
+            </div>
+          </header>
+
+          <div className="stats-grid">
+            <div className="stat-card">
+              <span>Total utilisateurs</span>
+              <strong>{adminStats.totalUsers}</strong>
+            </div>
+            <div className="stat-card">
+              <span>Tickets</span>
+              <strong>{adminStats.totalTickets}</strong>
+            </div>
+            <div className="stat-card">
+              <span>Ouverts</span>
+              <strong>{adminStats.open}</strong>
+            </div>
+            <div className="stat-card">
+              <span>En cours</span>
+              <strong>{adminStats.inProgress}</strong>
+            </div>
+            <div className="stat-card">
+              <span>Fermés</span>
+              <strong>{adminStats.closed}</strong>
+            </div>
+          </div>
+
+          {error && <div className="alert error">{error}</div>}
+          {success && <div className="alert success">{success}</div>}
+
+          <section className="admin-table-block">
+            <div className="table-header">
+              <h3>Tickets</h3>
+            </div>
+
+            <div className="admin-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Client</th>
+                    <th>Titre</th>
+                    <th>Catégorie</th>
+                    <th>Priorité</th>
+                    <th>Statut</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adminTickets.length === 0 ? (
+                    <tr>
+                      <td colSpan="7">Aucun ticket trouvé</td>
+                    </tr>
+                  ) : (
+                    adminTickets.map((ticket) => (
+                      <tr key={ticket.id}>
+                        <td>#{ticket.id}</td>
+                        <td>
+                          {ticket.first_name || ticket.last_name
+                            ? `${ticket.first_name || ''} ${ticket.last_name || ''}`.trim()
+                            : ticket.email || 'Utilisateur'}
+                        </td>
+                        <td>{ticket.title}</td>
+                        <td>{ticket.category}</td>
+                        <td>{ticket.priority}</td>
+                        <td>
+                          <select value={ticket.status} onChange={(e) => updateTicketStatus(ticket.id, e.target.value)}>
+                            <option value="open">Ouvert</option>
+                            <option value="in_progress">En cours</option>
+                            <option value="closed">Fermé</option>
+                          </select>
+                        </td>
+                        <td>
+                          <button className="mini-btn" onClick={() => openConversation(ticket.id)}>
+                            Ouvrir
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="dashboard">
       <aside className="sidebar">
@@ -339,7 +524,7 @@ function App() {
         </div>
 
         <div className="user-box">
-          <strong>{user?.first_name || 'Utilisateur'}</strong>
+          <strong>{user?.firstName || user?.first_name || 'Utilisateur'}</strong>
           <span>{user?.email}</span>
         </div>
 
@@ -348,22 +533,8 @@ function App() {
         <div className="ticket-panel">
           <h3>Créer un ticket</h3>
           <form onSubmit={handleTicketSubmit} className="stacked-form small">
-            <input
-              type="text"
-              name="title"
-              value={ticketForm.title}
-              onChange={handleTicketInput}
-              placeholder="Titre du problème"
-              required
-            />
-            <textarea
-              name="description"
-              rows="4"
-              value={ticketForm.description}
-              onChange={handleTicketInput}
-              placeholder="Décrivez votre problème"
-              required
-            />
+            <input type="text" name="title" value={ticketForm.title} onChange={handleTicketInput} placeholder="Titre du problème" required />
+            <textarea name="description" rows="4" value={ticketForm.description} onChange={handleTicketInput} placeholder="Décrivez votre problème" required />
             <select name="category" value={ticketForm.category} onChange={handleTicketInput}>
               <option value="general">Général</option>
               <option value="authentication">Authentification</option>
@@ -399,11 +570,7 @@ function App() {
               <div className="empty-box">Aucun ticket pour le moment.</div>
             ) : (
               tickets.map((ticket) => (
-                <button
-                  key={ticket.id}
-                  className={`ticket-card ${selectedTicketId === ticket.id ? 'selected' : ''}`}
-                  onClick={() => openConversation(ticket.id)}
-                >
+                <button key={ticket.id} className={`ticket-card ${selectedTicketId === ticket.id ? 'selected' : ''}`} onClick={() => openConversation(ticket.id)}>
                   <div className="ticket-card-top">
                     <strong>{ticket.title}</strong>
                     <span className={`badge ${ticket.status}`}>{ticket.status}</span>
@@ -433,10 +600,7 @@ function App() {
                     <div className="empty-box">Aucune discussion pour ce ticket.</div>
                   ) : (
                     messages.map((msg, index) => (
-                      <div
-                        key={`${msg.id || index}-${msg.created_at || index}`}
-                        className={`message ${msg.is_from_ai ? 'ai' : 'user'}`}
-                      >
+                      <div key={`${msg.id || index}-${msg.created_at || index}`} className={`message ${msg.is_from_ai ? 'ai' : 'user'}`}>
                         <div className="message-body">
                           <strong>{msg.is_from_ai ? 'IA' : 'Vous'}</strong>
                           <p>{msg.message_text}</p>
@@ -447,12 +611,7 @@ function App() {
                 </div>
 
                 <form onSubmit={sendMessage} className="chat-form">
-                  <input
-                    type="text"
-                    value={messageInput}
-                    onChange={(e) => setMessageInput(e.target.value)}
-                    placeholder="Décrivez votre problème ou demandez une aide..."
-                  />
+                  <input type="text" value={messageInput} onChange={(e) => setMessageInput(e.target.value)} placeholder="Décrivez votre problème ou demandez une aide..." />
                   <button className="primary-btn" type="submit">Envoyer</button>
                 </form>
               </>
