@@ -1,0 +1,28 @@
+[
+  {
+    "title": "Virus ou logiciel malveillant",
+    "problem": "L'ordinateur est lent, affiche des publicités étranges ou se comporte anormalement.",
+    "solution": "Lancez une analyse antivirus, désinstallez les programmes suspects et installez un anti-malware.",
+    "keywords": "virus malware antivirus securite infected",
+    "steps": [
+      "Lancez une analyse complète avec votre antivirus.",
+      "Installez et exécutez un anti-malware reconnu (Malwarebytes, Kaspersky, etc.).",
+      "Désinstallez les programmes suspects du panneau de contrôle.",
+      "Nettoyez les extensions de navigateur suspectes.",
+      "Mettez à jour votre antivirus et relancez une analyse."
+    ]
+  },
+  {
+    "title": "Données non sécurisées en ligne",
+    "problem": "Je suis inquiet pour la sécurité de mes données personnelles en ligne.",
+    "solution": "Utilisez des mots de passe forts, l'authentification à deux facteurs et une connexion chiffrée.",
+    "keywords": "securite donnees password authentification chiffrement",
+    "steps": [
+      "Utilisez un gestionnaire de mots de passe pour créer des mots de passe forts et uniques.",
+      "Activez l'authentification à deux facteurs sur vos comptes importants.",
+      "Vérifiez les paramètres de confidentialité de vos réseaux sociaux.",
+      "Installez un VPN pour chiffrer votre connexion internet.",
+      "Mettez à jour régulièrement votre système d'exploitation et vos logiciels."
+    ]
+  }
+]
