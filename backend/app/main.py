@@ -3,7 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.chat import router as chat_router
 
-app = FastAPI(title="tech-support-ai-app", version="0.1.0")
+app = FastAPI(
+    title="WAZE",
+    description="Assistant Technique Intelligent pour Environnement Zéro-connexion",
+    version="1.0.0",
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -18,4 +22,8 @@ app.include_router(chat_router, prefix="/api")
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "service": "tech-support-ai-app"}
+    return {
+        "status": "ok",
+        "service": "WAZE",
+        "description": "Assistant Technique Intelligent"
+    }
