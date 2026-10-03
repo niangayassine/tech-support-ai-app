@@ -2,27 +2,36 @@
 
 Application d'assistance technologique alimentée par l'IA pour aider les utilisateurs à résoudre les problèmes technologiques.
 
-## Structure du projet
+## Objectif
+
+Créer un assistant technique local capable d'aider les utilisateurs à diagnostiquer et à résoudre des problèmes liés à :
+- matériel informatique
+- logiciels et système d'exploitation
+- réseau et connexion internet
+- sécurité informatique
+- performances et maintenance
+- debug de code et résolution de problèmes techniques
+
+## Stack technique
+
+- Backend : Python + FastAPI
+- Frontend : React + Vite
+- IA locale : Ollama
+- Base de connaissances : fichiers JSON structurés
+- RAG : recherche locale sur la base de connaissances
+- Déploiement : Docker Compose
+
+## Architecture proposée
 
 ```text
 tech-support-ai-app/
 ├── backend/
 │   ├── app/
-│   │   ├── __init__.py
-│   │   ├── main.py
 │   │   ├── api/
-│   │   │   ├── __init__.py
-│   │   │   └── chat.py
-│   │   ├── services/
-│   │   │   ├── __init__.py
-│   │   │   ├── kb_service.py
-│   │   │   ├── rag_service.py
-│   │   │   └── llm_service.py
 │   │   ├── models/
-│   │   │   ├── __init__.py
-│   │   │   └── chat.py
-│   │   └── utils/
-│   │       └── __init__.py
+│   │   ├── services/
+│   │   ├── __init__.py
+│   │   └── main.py
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -30,27 +39,16 @@ tech-support-ai-app/
 │   ├── vite.config.js
 │   ├── index.html
 │   └── src/
-│       ├── main.jsx
-│       ├── App.jsx
-│       └── styles.css
 ├── kb/
 │   ├── faq.json
-│   ├── hardware.json
 │   ├── network.json
-│   └── software.json
+│   ├── software.json
+│   └── hardware.json
 ├── docker-compose.yml
 ├── .gitignore
 ├── README.md
 └── LICENSE
 ```
-
-## Stack technique
-
-- Backend : Python + FastAPI
-- IA locale : Ollama
-- RAG : recherche locale dans une base de connaissance JSON
-- Frontend : React + Vite
-- Déploiement : Docker Compose
 
 ## Démarrage rapide
 
@@ -59,7 +57,7 @@ tech-support-ai-app/
 ```bash
 cd backend
 python -m venv .venv
-source .venv/bin/activate  # ou .venv\Scripts\activate sous Windows
+source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
@@ -74,25 +72,28 @@ npm run dev
 
 ### Ollama
 
-Assurez-vous qu'Ollama est installé et qu'un modèle est disponible, par exemple :
-
 ```bash
 ollama pull llama3.1
 ```
 
-## Première version
+## Fonctionnalités de la MVP
 
-Cette première version propose :
-- un assistant technique avec IA locale
-- un moteur RAG basé sur des connaissances locales
-- une API REST pour l'échange de messages
-- une interface frontend simple
+- assistant technique en français
+- chat avec contexte technique
+- moteur de recherche local (RAG)
+- base de connaissances dans des fichiers JSON
+- interface web simple
+- réponses structurées : cause probable, vérification, solution
 
-## À venir
+## Prochaines améliorations
 
 - diagnostic système avancé
-- logs et analyse réseau
-- support multi-domaine
+- intégration d'un moteur IA plus avancé
 - historique des conversations
+- support réseau, sécurité et dev
 - auth utilisateur
-- base vectorielle plus avancée
+- base vectorielle plus robuste
+
+## Licence
+
+MIT

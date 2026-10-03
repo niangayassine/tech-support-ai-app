@@ -1,0 +1,19 @@
+# .gitignore
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+.env
+.env.*
+node_modules/
+.dist/
+dist/
+build/
+.DS_Store
+coverage/
+.pytest_cache/
+.vscode/
+.idea/

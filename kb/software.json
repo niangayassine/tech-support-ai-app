@@ -1,0 +1,12 @@
+{
+  "title": "Application qui ne répond plus",
+  "problem": "Une application se bloque ou ne répond plus.",
+  "solution": "Fermez l'application, vérifiez s'il existe une mise à jour et relancez le système si nécessaire.",
+  "keywords": "application bloquee ne repond plus crash",
+  "steps": [
+    "Appuyez sur Ctrl + Alt + Suppr et ouvrez le gestionnaire de tâches.",
+    "Terminez le processus bloqué.",
+    "Vérifiez si l'application est mise à jour.",
+    "Redémarrez l'application ou l'ordinateur si le problème persiste."
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "title": "Système très lent",
+  "problem": "L'ordinateur est lent, met du temps à démarrer ou à ouvrir des applications.",
+  "solution": "Libérez de l'espace disque, vérifiez la RAM et désactivez les programmes au démarrage.",
+  "keywords": "lent pc performance ram disque",
+  "steps": [
+    "Vérifiez l'espace libre sur le disque dur ou SSD.",
+    "Fermez les applications inutiles en arrière-plan.",
+    "Désactivez les logiciels démarrant au démarrage.",
+    "Surveillez l'utilisation de la RAM et du processeur.",
+    "Vérifiez s'il y a un virus ou un logiciel parasite."
+  ]
+}

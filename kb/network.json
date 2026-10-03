@@ -1,0 +1,12 @@
+{
+  "title": "Connexion internet lente",
+  "problem": "Le réseau est lent ou instable.",
+  "solution": "Vérifiez d'abord le routeur, la distance du signal Wi-Fi et l'état des appareils connectés.",
+  "keywords": "wifi reseau internet lent connexion",
+  "steps": [
+    "Redémarrez le modem et le routeur.",
+    "Éloignez-vous de l'antenne ou déplacez le routeur centralement.",
+    "Vérifiez s'il y a une saturation du réseau ou de nombreux appareils connectés.",
+    "Testez la connexion avec un autre appareil pour isoler le problème."
+  ]
+}

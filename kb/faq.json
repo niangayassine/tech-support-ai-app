@@ -1,0 +1,12 @@
+{
+  "title": "Problème général de support",
+  "problem": "Je ne sais pas quoi faire pour résoudre mon problème technique.",
+  "solution": "Commencez par préciser le symptôme, l'appareil utilisé, le système d'exploitation et les dernières actions effectuées.",
+  "keywords": "support probleme technique aide commande",
+  "steps": [
+    "Décrivez précisément le symptôme.",
+    "Indiquez le système d'exploitation et le matériel utilisé.",
+    "Précisez quand le problème apparaît.",
+    "Donnez la dernière action effectuée avant l'apparition du bug."
+  ]
+}
